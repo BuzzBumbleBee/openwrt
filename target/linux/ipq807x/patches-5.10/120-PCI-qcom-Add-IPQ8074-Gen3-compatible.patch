@@ -1,0 +1,23 @@
+From 5047241ed8160e10fcfff71edadf3f93a666526d Mon Sep 17 00:00:00 2001
+From: Robert Marko <robimarko@gmail.com>
+Date: Tue, 11 May 2021 22:23:19 +0200
+Subject: [PATCH 2/2] PCI: qcom: Add IPQ8074 Gen3 compatible
+
+Reuse the IPQ6018 Gen3 support which uses the same
+IP and simply add the compatible.
+
+Signed-off-by: Robert Marko <robimarko@gmail.com>
+---
+ drivers/pci/controller/dwc/pcie-qcom.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -1608,6 +1608,7 @@ static const struct of_device_id qcom_pc
+ 	{ .compatible = "qcom,pcie-qcs404", .data = &ops_2_4_0 },
+ 	{ .compatible = "qcom,pcie-sdm845", .data = &ops_2_7_0 },
+ 	{ .compatible = "qcom,pcie-ipq6018", .data = &ops_2_9_0 },
++	{ .compatible = "qcom,pcie-ipq8074-gen3", .data = &ops_2_9_0 },
+ 	{ }
+ };
+ 

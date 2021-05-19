@@ -1,0 +1,75 @@
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -172,8 +172,10 @@ struct qcom_pcie_resources_2_7_0 {
+ 	struct clk *pipe_clk;
+ };
+ 
++#define QCOM_PCIE_2_9_0_MAX_CLOCKS	10
+ struct qcom_pcie_resources_2_9_0 {
+-	struct clk_bulk_data clks[5];
++	int num_clks;
++	struct clk_bulk_data clks[QCOM_PCIE_2_9_0_MAX_CLOCKS];
+ 	struct reset_control *rst;
+ };
+ 
+@@ -1274,15 +1276,35 @@ static int qcom_pcie_get_resources_2_9_0
+ 	struct qcom_pcie_resources_2_9_0 *res = &pcie->res.v2_9_0;
+ 	struct dw_pcie *pci = pcie->pci;
+ 	struct device *dev = pci->dev;
+-	int ret;
++	int ret, i;
+ 
+-	res->clks[0].id = "iface";
+-	res->clks[1].id = "axi_m";
+-	res->clks[2].id = "axi_s";
+-	res->clks[3].id = "axi_bridge";
+-	res->clks[4].id = "rchng";
++	res->num_clks = of_property_count_strings(dev->of_node, "clock-names");
++	dev_info(dev, "found %d clocks in dt\n", res->num_clks);
+ 
+-	ret = devm_clk_bulk_get(dev, ARRAY_SIZE(res->clks), res->clks);
++	if (res->num_clks < 0) {
++		dev_err(dev, "faild to count clocks\n");
++		return ret;
++	}
++	
++	if (res->num_clks > ARRAY_SIZE(res->clks)) {
++		dev_err(dev, "to many clocks defined in dt (set %d / max %d)\n",
++					res->num_clks, QCOM_PCIE_2_9_0_MAX_CLOCKS);
++		return -EINVAL;
++	}
++
++	for (i=0; i < res->num_clks; i++) {
++		const char *name;
++		if (of_property_read_string_index(dev->of_node, "clock-names",
++			i, &name)) {
++			dev_err(dev, "unable to find clk name (%d)\n", i);
++			return -EINVAL;
++		}
++		dev_info(dev, "got clock : %s\n", name);
++		
++		res->clks[i].id = name;
++	}
++
++	ret = devm_clk_bulk_get(dev, res->num_clks, res->clks);
+ 	if (ret < 0)
+ 		return ret;
+ 
+@@ -1297,7 +1319,7 @@ static void qcom_pcie_deinit_2_9_0(struc
+ {
+ 	struct qcom_pcie_resources_2_9_0 *res = &pcie->res.v2_9_0;
+ 
+-	clk_bulk_disable_unprepare(ARRAY_SIZE(res->clks), res->clks);
++	clk_bulk_disable_unprepare(res->num_clks, res->clks);
+ }
+ 
+ static int qcom_pcie_init_2_9_0(struct qcom_pcie *pcie)
+@@ -1326,7 +1348,7 @@ static int qcom_pcie_init_2_9_0(struct q
+ 	 */
+ 	usleep_range(2000, 2500);
+ 
+-	ret = clk_bulk_prepare_enable(ARRAY_SIZE(res->clks), res->clks);
++	ret = clk_bulk_prepare_enable(res->num_clks, res->clks);
+ 	if (ret)
+ 		goto err_reset;
+ 
