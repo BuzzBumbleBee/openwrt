@@ -1,0 +1,210 @@
+From e69adcedad5bb485a8b0f0a4cc687edc11bd9443 Mon Sep 17 00:00:00 2001
+From: pavir <pavir@codeaurora.org>
+Date: Tue, 14 Apr 2020 15:35:30 +0530
+Subject: net: Add extra priv_flag support in netdevice
+
+This patch adds a flag in struct net_device which
+is an extension to priv_flags and is used to
+check the type of device.
+
+Change-Id: Ibb5a3f0c706e1b169b848aed7004aa4ea6d57069
+Signed-off-by: pavir <pavir@codeaurora.org>
+---
+ drivers/net/ifb.c             |  4 ++--
+ drivers/net/ppp/ppp_generic.c |  6 +++---
+ drivers/net/tun.c             |  2 +-
+ include/linux/netdevice.h     | 30 +++++++++++++++++++++---------
+ net/ipv4/ip_gre.c             |  3 ++-
+ net/ipv6/ip6_gre.c            |  2 +-
+ net/l2tp/l2tp_eth.c           |  2 +-
+ 7 files changed, 31 insertions(+), 18 deletions(-)
+
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -3556,6 +3556,15 @@ void dev_uc_flush(struct net_device *dev);
+ void dev_uc_init(struct net_device *dev);
+ 
+ /**
++ *  ifb_update_offload_stats - Update the IFB interface stats
++ *  @dev: IFB device to update the stats
++ *  @offload_stats: per CPU stats structure
++ *
++ *  Allows update of IFB stats when flows are offloaded to an accelerator.
++ **/
++void ifb_update_offload_stats(struct net_device *dev, struct pcpu_sw_netstats *offload_stats);
++
++/**
+  *  __dev_uc_sync - Synchonize device's unicast list
+  *  @dev:  device to sync
+  *  @sync: function to call if address should be added
+diff --git a/drivers/net/ifb.c b/drivers/net/ifb.c
+index d1ae6a5..fef4a859 100644
+--- a/drivers/net/ifb.c
++++ b/drivers/net/ifb.c
+@@ -129,6 +129,31 @@ resched:
+ 
+ }
+ 
++void ifb_update_offload_stats(struct net_device *dev, struct pcpu_sw_netstats *offload_stats)
++{
++	struct ifb_dev_private *dp;
++	struct ifb_q_private *txp;
++
++	if (!dev || !offload_stats) {
++		return;
++	}
++
++	if (!(dev->priv_flags_ext & IFF_EXT_IFB)) {
++		return;
++	}
++
++	dp = netdev_priv(dev);
++	txp = dp->tx_private;
++
++	u64_stats_update_begin(&txp->rsync);
++	txp->rx_packets += offload_stats->rx_packets;
++	txp->rx_bytes += offload_stats->rx_bytes;
++	txp->tx_packets += offload_stats->tx_packets;
++	txp->tx_bytes += offload_stats->tx_bytes;
++	u64_stats_update_end(&txp->rsync);
++}
++EXPORT_SYMBOL(ifb_update_offload_stats);
++
+ static void ifb_stats64(struct net_device *dev,
+ 			struct rtnl_link_stats64 *stats)
+ {
+@@ -255,6 +255,7 @@ static void ifb_setup(struct net_device *dev)
+ 	dev->flags |= IFF_NOARP;
+ 	dev->flags &= ~IFF_MULTICAST;
+ 	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
++	dev->priv_flags_ext |= IFF_EXT_IFB;	/* Mark the device as an IFB device. */
+ 	netif_keep_dst(dev);
+ 	eth_hw_addr_random(dev);
+ 	dev->needs_free_netdev = true;
+# diff --git a/drivers/net/ppp/ppp_generic.c b/drivers/net/ppp/ppp_generic.c
+# index 338f9dc..ba4ef51 100644
+# --- a/drivers/net/ppp/ppp_generic.c
+# +++ b/drivers/net/ppp/ppp_generic.c
+# @@ -3000,10 +3000,13 @@ ppp_connect_channel(struct channel *pch, int unit)
+ 
+#  	ppp_proto = ppp_channel_get_protocol(pch->chan);
+#  	if (ppp_proto == PX_PROTO_PPTP) {
+# +		ppp->dev->priv_flags_ext |= IFF_EXT_PPP_PPTP;
+#  	} else if (ppp_proto == PX_PROTO_OL2TP) {
+#  		version = ppp_channel_get_proto_version(pch->chan);
+#  		if (version == 2)
+# +			ppp->dev->priv_flags_ext |= IFF_EXT_PPP_L2TPV2;
+#  		else if (version == 3)
+# +			ppp->dev->priv_flags_ext |= IFF_EXT_PPP_L2TPV3;
+#  	}
+#  	notify = 1;
+ 
+diff --git a/drivers/net/tun.c b/drivers/net/tun.c
+index af223c2..6024be6 100644
+--- a/drivers/net/tun.c
++++ b/drivers/net/tun.c
+@@ -1740,6 +1740,7 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
+ 		dev->vlan_features = dev->features &
+ 				     ~(NETIF_F_HW_VLAN_CTAG_TX |
+ 				       NETIF_F_HW_VLAN_STAG_TX);
++		dev->priv_flags_ext |= IFF_EXT_TUN_TAP;
+ 
+ 		INIT_LIST_HEAD(&tun->disabled);
+ 		err = tun_attach(tun, file, false);
+diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
+index 985de97..76d63ede 100644
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -1319,6 +1319,23 @@ enum netdev_priv_flags {
+ 	IFF_FAILOVER_SLAVE		= 1<<28,
+ 	IFF_L3MDEV_RX_HANDLER		= 1<<29,
+ 	IFF_LIVE_RENAME_OK		= 1<<30,
++};
++
++/**
++ * enum netdev_priv_flags_ext - &struct net_device priv_flags_ext
++ *
++ * These flags are used to check for device type and can be
++ * set and used by the drivers
++ *
++ */
++enum netdev_priv_flags_ext {
++	IFF_EXT_TUN_TAP			= 1<<0,
++	IFF_EXT_PPP_L2TPV2		= 1<<1,
++	IFF_EXT_PPP_L2TPV3		= 1<<2,
++	IFF_EXT_PPP_PPTP		= 1<<3,
++	IFF_EXT_GRE_V4_TAP		= 1<<4,
++	IFF_EXT_GRE_V6_TAP		= 1<<5,
++	IFF_EXT_IFB			= 1<<6,
+ };
+ 
+ #define IFF_802_1Q_VLAN			IFF_802_1Q_VLAN
+@@ -1421,6 +1430,8 @@ enum netdev_priv_flags {
+  *	@flags:		Interface flags (a la BSD)
+  *	@priv_flags:	Like 'flags' but invisible to userspace,
+  *			see if.h for the definitions
++ *	@prirv_flags_ext:	Extension for 'priv_flags'
++ *
+  *	@gflags:	Global flags ( kept as legacy )
+  *	@padded:	How much padding added by alloc_netdev()
+  *	@operstate:	RFC2863 operstate
+@@ -1643,6 +1654,7 @@ struct net_device {
+ 
+ 	unsigned int		flags;
+ 	unsigned int		priv_flags;
++	unsigned int		priv_flags_ext;
+ 
+ 	unsigned short		gflags;
+ 	unsigned short		padded;
+# @@ -3986,7 +3998,7 @@ static inline bool netif_is_ovs_master(const struct net_device *dev)
+ 
+#  static inline bool netif_is_ifb_dev(const struct net_device *dev)
+#  {
+# -	return dev->priv_flags & IFF_IFB;
+# +	return dev->priv_flags_ext & IFF_EXT_IFB;
+#  }
+ 
+#  /* This device needs to keep skb dst for qdisc enqueue or ndo_start_xmit() */
+# diff --git a/net/ipv4/ip_gre.c b/net/ipv4/ip_gre.c
+# index 233cd10..05733dd 100644
+# --- a/net/ipv4/ip_gre.c
+# +++ b/net/ipv4/ip_gre.c
+# @@ -1065,7 +1065,8 @@ static void ipgre_tap_setup(struct net_device *dev)
+#  {
+#  	ether_setup(dev);
+#  	dev->netdev_ops		= &gre_tap_netdev_ops;
+# -	dev->priv_flags		|= IFF_LIVE_ADDR_CHANGE | IFF_GRE_V4_TAP;
+# +	dev->priv_flags	|= IFF_LIVE_ADDR_CHANGE;
+# +	dev->priv_flags_ext	|= IFF_EXT_GRE_V4_TAP;
+#  	ip_tunnel_setup(dev, gre_tap_net_id);
+#  }
+ 
+# diff --git a/net/ipv6/ip6_gre.c b/net/ipv6/ip6_gre.c
+# index 2e967d5..4a44c58 100644
+# --- a/net/ipv6/ip6_gre.c
+# +++ b/net/ipv6/ip6_gre.c
+# @@ -1510,7 +1510,7 @@ static void ip6gre_tap_setup(struct net_device *dev)
+ 
+#  	dev->netdev_ops = &ip6gre_tap_netdev_ops;
+#  	dev->destructor = ip6gre_dev_free;
+# -	dev->priv_flags |= IFF_GRE_V6_TAP;
+# +	dev->priv_flags_ext |= IFF_EXT_GRE_V6_TAP;
+#  	dev->features |= NETIF_F_NETNS_LOCAL;
+#  }
+ 
+# diff --git a/net/l2tp/l2tp_eth.c b/net/l2tp/l2tp_eth.c
+# index 22d28d4..43bc4d39 100644
+# --- a/net/l2tp/l2tp_eth.c
+# +++ b/net/l2tp/l2tp_eth.c
+# @@ -137,7 +137,7 @@ static void l2tp_eth_dev_setup(struct net_device *dev)
+#  {
+#  	ether_setup(dev);
+#  	dev->priv_flags		&= ~IFF_TX_SKB_SHARING;
+# -	dev->priv_flags		|= IFF_PPP_L2TPV3;
+# +	dev->priv_flags_ext	|= IFF_EXT_PPP_L2TPV3;
+#  	dev->features		|= NETIF_F_LLTX;
+#  	dev->netdev_ops		= &l2tp_eth_netdev_ops;
+#  	dev->destructor		= free_netdev;
+-- 
+cgit v1.1
+
