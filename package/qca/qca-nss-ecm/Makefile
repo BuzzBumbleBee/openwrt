@@ -39,16 +39,10 @@ define KernelPackage/qca-nss-ecm/Default
   TITLE:=QCA NSS Enhanced Connection Manager (ECM)
   FILES:=$(PKG_BUILD_DIR)/*.ko $(FILES_EXAMPLES)
   KCONFIG:=CONFIG_BRIDGE_NETFILTER=y \
-	CONFIG_NF_CONNTRACK_EVENTS=y \
-	CONFIG_NF_CONNTRACK_CHAIN_EVENTS=y \
-	CONFIG_NF_CONNTRACK_DSCPREMARK_EXT=y
+	CONFIG_NF_CONNTRACK_EVENTS=y
   MENU:=1
   PROVIDES:=kmod-qca-nss-ecm
 endef
-
-# 	# +kmod-pppoe \
-# 	# +PACKAGE_kmod-qca-ovsmgr:kmod-qca-ovsmgr \
-# 	# +kmod-ipsec
 
 define KernelPackage/qca-nss-ecm/Description/Default
 This package contains the QCA NSS Enhanced Connection Manager
@@ -169,11 +163,8 @@ EXTRA_CFLAGS+= \
 	-I$(STAGING_DIR)/usr/include/shortcut-fe \
 	-I$(STAGING_DIR)/usr/include/nat46
 
-
-
-ECM_MAKE_OPTS:=ECM_CLASSIFIER_HYFI_ENABLE=n
-
-ECM_MAKE_OPTS+=ECM_MULTICAST_ENABLE=n \
+ECM_MAKE_OPTS:= ECM_CLASSIFIER_HYFI_ENABLE=n \
+		ECM_MULTICAST_ENABLE=n \
 		ECM_INTERFACE_IPSEC_ENABLE=n \
 		ECM_INTERFACE_PPTP_ENABLE=n \
 		ECM_INTERFACE_L2TPV2_ENABLE=n \
@@ -186,15 +177,8 @@ ECM_MAKE_OPTS+=ECM_MULTICAST_ENABLE=n \
 		ECM_CLASSIFIER_MARK_ENABLE=n \
 		ECM_CLASSIFIER_DSCP_ENABLE=n \
 		ECM_CLASSIFIER_PCC_ENABLE=n \
-		ECM_DB_ADVANCED_STATS_ENABLE=n \
-		ECM_TRACKER_DPI_SUPPORT_ENABLE=n \
-		ECM_DB_CLASSIFIER_TYPE_ASSIGNMENTS_TRACK_ENABLE=n \
 		ECM_BAND_STEERING_ENABLE=n \
 		ECM_INTERFACE_PPPOE_ENABLE=n
-
-# Seems mandatory?
-#  ECM_STATE_OUTPUT_ENABLE=n 
-# ECM_DB_CONNECTION_CROSS_REFERENCING_ENABLE=n
 
 ifneq ($(LOCAL_VARIANT),standard)
 
@@ -208,9 +192,9 @@ ifeq ($(filter $(CONFIG_KERNEL_IPQ_MEM_PROFILE), 256),)
 ECM_MAKE_OPTS+=ECM_XFRM_ENABLE=y
 endif
 
-# ifneq ($(CONFIG_PACKAGE_kmod-nat46),)
-# ECM_MAKE_OPTS+=ECM_INTERFACE_MAP_T_ENABLE=y
-# endif
+ifneq ($(CONFIG_PACKAGE_kmod-nat46),)
+ECM_MAKE_OPTS+=ECM_INTERFACE_MAP_T_ENABLE=y
+endif
 
 ifneq ($(CONFIG_PACKAGE_kmod-qca-nss-drv-ovpn-link),)
 ECM_MAKE_OPTS+=ECM_INTERFACE_OVPN_ENABLE=y
@@ -226,15 +210,6 @@ ECM_MAKE_OPTS+=ECM_INTERFACE_OVS_BRIDGE_ENABLE=y \
 EXTRA_CFLAGS+= -I$(STAGING_DIR)/usr/include/qca-ovsmgr
 endif
 
-EXTRA_CFLAGS+=
-
-# Keeping default as ipq806x for branches that does not have subtarget framework
-ifeq ($(CONFIG_TARGET_ipq),y)
-subtarget:=$(SUBTARGET)
-else
-subtarget:=$(CONFIG_TARGET_BOARD)
-endif
-
 define Build/InstallDev
 	$(INSTALL_DIR) $(1)/usr/include/qca-nss-ecm
 	$(CP) $(PKG_BUILD_DIR)/exports/* $(1)/usr/include/qca-nss-ecm
@@ -245,7 +220,7 @@ define Build/Compile
 		$(KERNEL_MAKE_FLAGS) \
 		$(PKG_MAKE_FLAGS) \
 		M="$(PKG_BUILD_DIR)" \
-		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" SoC="$(subtarget)" \
+		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" SoC="$(CONFIG_TARGET_BOARD)" \
 		EXAMPLES_BUILD_PCC="$(CONFIG_QCA_NSS_ECM_EXAMPLES_PCC)" \
 		EXAMPLES_BUILD_MARK="$(CONFIG_QCA_NSS_ECM_EXAMPLES_MARK)" \
 		EXAMPLES_BUILD_OVS="$(CONFIG_QCA_NSS_ECM_OVS)" \

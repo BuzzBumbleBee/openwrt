@@ -1,21 +1,22 @@
-From 8c9a477c6c7b646193ec863284d0895a36d0c9ce Mon Sep 17 00:00:00 2001
+From 73345c87b28a473b35b57e673f8de963c3d73da1 Mon Sep 17 00:00:00 2001
 From: Ansuel Smith <ansuelsmth@gmail.com>
 Date: Wed, 19 May 2021 02:38:53 +0200
 Subject: [PATCH] treewide: componentize the module even more
 
 Signed-off-by: Ansuel Smith <ansuelsmth@gmail.com>
 ---
- Makefile                   | 44 ++++++++++++++++++++++++++++----------
- ecm_db/ecm_db_connection.c |  8 +++++++
- ecm_db/ecm_db_node.c       |  4 ++++
- ecm_interface.c            |  2 ++
- 4 files changed, 47 insertions(+), 11 deletions(-)
+ Makefile                         | 56 +++++++++++++++++++++++++-------
+ ecm_db/ecm_db_connection.c       |  8 +++++
+ ecm_db/ecm_db_node.c             |  4 +++
+ ecm_interface.c                  |  8 +++++
+ frontends/ecm_front_end_common.c |  7 ++++
+ 5 files changed, 72 insertions(+), 11 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index 0aa85b4..61dd0b1 100644
+index 0aa85b4..c1d16da 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -82,7 +82,9 @@ ccflags-$(ECM_INTERFACE_BOND_ENABLE) += -DECM_INTERFACE_BOND_ENABLE
+@@ -82,9 +82,17 @@ ccflags-$(ECM_INTERFACE_BOND_ENABLE) += -DECM_INTERFACE_BOND_ENABLE
  # Define ECM_INTERFACE_PPPOE_ENABLE=y in order
  # to enable support for PPPoE acceleration.
  # #############################################################################
@@ -25,8 +26,29 @@ index 0aa85b4..61dd0b1 100644
 +endif
  ccflags-$(ECM_INTERFACE_PPPOE_ENABLE) += -DECM_INTERFACE_PPPOE_ENABLE
  
++# #############################################################################
++# Define ECM_INTERFACE_L2TPV2_PPTP_ENABLE=y in order
++# to enable support for l2tpv2 or PPTP detection.
++# #############################################################################
++ccflags-$(ECM_INTERFACE_L2TPV2_PPTP_ENABLE) += -DECM_INTERFACE_L2TPV2_PPTP_ENABLE
++
  # #############################################################################
-@@ -186,7 +188,9 @@ ccflags-$(ECM_INTERFACE_OVS_BRIDGE_ENABLE) += -DECM_INTERFACE_OVS_BRIDGE_ENABLE
+ # Define ECM_INTERFACE_L2TPV2_ENABLE=y in order
+ # to enable support for l2tpv2 acceleration.
+@@ -117,6 +125,12 @@ ccflags-$(ECM_INTERFACE_PPP_ENABLE) += -DECM_INTERFACE_PPP_ENABLE
+ # #############################################################################
+ ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
+ 
++# #############################################################################
++# Define ECM_INTERFACE_GRE_ENABLE=y in order
++# to enable support for GRE detection.
++# #############################################################################
++ccflags-$(ECM_INTERFACE_GRE_ENABLE) += -DECM_INTERFACE_GRE_ENABLE
++
+ # #############################################################################
+ # Define ECM_INTERFACE_GRE_TAP_ENABLE=y in order
+ # to enable support for GRE TAP interface.
+@@ -186,7 +200,9 @@ ccflags-$(ECM_INTERFACE_OVS_BRIDGE_ENABLE) += -DECM_INTERFACE_OVS_BRIDGE_ENABLE
  # #############################################################################
  # Define ECM_INTERFACE_VLAN_ENABLE=y in order to enable support for VLAN
  # #############################################################################
@@ -37,7 +59,7 @@ index 0aa85b4..61dd0b1 100644
  ccflags-$(ECM_INTERFACE_VLAN_ENABLE) += -DECM_INTERFACE_VLAN_ENABLE
  
  # #############################################################################
-@@ -228,7 +232,9 @@ ccflags-$(ECM_CLASSIFIER_OVS_ENABLE) += -DECM_CLASSIFIER_OVS_ENABLE
+@@ -228,7 +244,9 @@ ccflags-$(ECM_CLASSIFIER_OVS_ENABLE) += -DECM_CLASSIFIER_OVS_ENABLE
  # #############################################################################
  # Define ECM_CLASSIFIER_MARK_ENABLE=y in order to enable mark classifier.
  # #############################################################################
@@ -48,7 +70,7 @@ index 0aa85b4..61dd0b1 100644
  ecm-$(ECM_CLASSIFIER_MARK_ENABLE) += ecm_classifier_mark.o
  ccflags-$(ECM_CLASSIFIER_MARK_ENABLE) += -DECM_CLASSIFIER_MARK_ENABLE
  
-@@ -247,7 +253,9 @@ ccflags-$(ECM_CLASSIFIER_NL_ENABLE) += -DECM_CLASSIFIER_NL_ENABLE
+@@ -247,7 +265,9 @@ ccflags-$(ECM_CLASSIFIER_NL_ENABLE) += -DECM_CLASSIFIER_NL_ENABLE
  # #############################################################################
  # Define ECM_CLASSIFIER_DSCP_ENABLE=y in order to enable DSCP classifier.
  # #############################################################################
@@ -59,7 +81,7 @@ index 0aa85b4..61dd0b1 100644
  ecm-$(ECM_CLASSIFIER_DSCP_ENABLE) += ecm_classifier_dscp.o
  ccflags-$(ECM_CLASSIFIER_DSCP_ENABLE) += -DECM_CLASSIFIER_DSCP_ENABLE
  ccflags-$(ECM_CLASSIFIER_DSCP_IGS) += -DECM_CLASSIFIER_DSCP_IGS
-@@ -274,7 +282,9 @@ endif
+@@ -274,7 +294,9 @@ endif
  # the Parental Controls subsystem classifier in ECM. Currently disabled until
  # customers require it / if they need to integrate their Parental Controls with it.
  # #############################################################################
@@ -70,7 +92,7 @@ index 0aa85b4..61dd0b1 100644
  ecm-$(ECM_CLASSIFIER_PCC_ENABLE) += ecm_classifier_pcc.o
  ccflags-$(ECM_CLASSIFIER_PCC_ENABLE) += -DECM_CLASSIFIER_PCC_ENABLE
  
-@@ -301,28 +311,36 @@ ccflags-$(ECM_NON_PORTED_SUPPORT_ENABLE) += -DECM_NON_PORTED_SUPPORT_ENABLE
+@@ -301,28 +323,36 @@ ccflags-$(ECM_NON_PORTED_SUPPORT_ENABLE) += -DECM_NON_PORTED_SUPPORT_ENABLE
  # #############################################################################
  # Define ECM_STATE_OUTPUT_ENABLE=y to support XML state output
  # #############################################################################
@@ -111,7 +133,7 @@ index 0aa85b4..61dd0b1 100644
  ccflags-$(ECM_TRACKER_DPI_SUPPORT_ENABLE) += -DECM_TRACKER_DPI_SUPPORT_ENABLE
  
  # #############################################################################
-@@ -330,14 +348,18 @@ ccflags-$(ECM_TRACKER_DPI_SUPPORT_ENABLE) += -DECM_TRACKER_DPI_SUPPORT_ENABLE
+@@ -330,14 +360,18 @@ ccflags-$(ECM_TRACKER_DPI_SUPPORT_ENABLE) += -DECM_TRACKER_DPI_SUPPORT_ENABLE
  # support for the database keeping lists of connections that are assigned
  # on a per TYPE of classifier basis.
  # #############################################################################
@@ -215,10 +237,58 @@ index 723ac67..3350902 100644
  	ecm_db_node_hash_t hash_index;
  	struct ecm_db_listener_instance *li;
 diff --git a/ecm_interface.c b/ecm_interface.c
-index 066a03e..75e3465 100644
+index 066a03e..c5101b7 100644
 --- a/ecm_interface.c
 +++ b/ecm_interface.c
-@@ -6630,6 +6630,7 @@ static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *i
+@@ -1343,6 +1343,7 @@ struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr)
+  */
+ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
+ {
++#ifdef ECM_INTERFACE_PPTP_ENABLE
+ 	struct net_device *in;
+ 
+ 	/*
+@@ -1367,6 +1368,7 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
+ 	}
+ 
+ 	dev_put(in);
++#endif
+ 	return false;
+ }
+ 
+@@ -1379,6 +1381,7 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
+  */
+ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct net_device *out, int ver)
+ {
++#ifdef ECM_INTERFACE_L2TPV2_PPTP_ENABLE
+ 	uint32_t flag = 0;
+ 	struct net_device *in;
+ 
+@@ -1411,6 +1414,7 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
+ 	}
+ 
+ 	dev_put(in);
++#endif
+ 	return false;
+ }
+ 
+@@ -1423,6 +1427,7 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
+  */
+ bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *out)
+ {
++#ifdef ECM_INTERFACE_L2TPV2_PPTP_ENABLE
+ 	struct net_device *in;
+ 
+ 	/*
+@@ -1445,6 +1450,7 @@ bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *ou
+ 	}
+ 
+ 	dev_put(in);
++#endif
+ 	return false;
+ }
+ 
+@@ -6630,6 +6636,7 @@ static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *i
  		return;
  	}
  
@@ -226,7 +296,7 @@ index 066a03e..75e3465 100644
  	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
  		/*
  		 * Re-generate all connections associated with this interface
-@@ -6645,6 +6646,7 @@ static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *i
+@@ -6645,6 +6652,7 @@ static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *i
  			ci[dir] = cin;
  		}
  	}
@@ -234,6 +304,42 @@ index 066a03e..75e3465 100644
  
  #ifdef ECM_MULTICAST_ENABLE
  	/*
+diff --git a/frontends/ecm_front_end_common.c b/frontends/ecm_front_end_common.c
+index 325721a..5995d1e 100644
+--- a/frontends/ecm_front_end_common.c
++++ b/frontends/ecm_front_end_common.c
+@@ -106,6 +106,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
+ 							     struct nf_conntrack_tuple *tuple,
+ 							     int ip_version)
+ {
++#ifdef ECM_INTERFACE_GRE_ENABLE
+ 	struct net_device *dev;
+ 	struct gre_base_hdr *greh;
+ 
+@@ -117,10 +118,12 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
+ 		/*
+ 		 * Case 1: PPTP locally terminated
+ 		 */
++#ifdef ECM_INTERFACE_PPTP_ENABLE
+ 		if (ecm_interface_is_pptp(skb, outdev)) {
+ 			DEBUG_TRACE("%px: PPTP GRE locally terminated - allow acceleration\n", skb);
+ 			return true;
+ 		}
++#endif
+ 
+ 		/*
+ 		 * Case 2: PPTP pass through
+@@ -223,6 +226,10 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
+ 	 */
+ 	DEBUG_TRACE("%px: GRE IPv%d pass through - allow acceleration\n", skb, ip_version);
+ 	return true;
++#else
++	DEBUG_TRACE("%px: GRE%d feature is disabled - do not allow acceleration\n", skb, ip_version);
++	return false;
++#endif
+ }
+ 
+ #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 -- 
-2.30.2
+2.31.1
 
