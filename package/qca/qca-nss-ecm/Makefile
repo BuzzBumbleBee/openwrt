@@ -23,7 +23,9 @@ define KernelPackage/qca-nss-ecm
 	+iptables-mod-extra \
 	+kmod-ipt-conntrack \
 	+kmod-ipt-physdev \
-	+kmod-ipt-physdev
+	+kmod-ipt-physdev \
+	+kmod-pppoe \
+	+kmod-ppp
   TITLE:=QCA NSS Enhanced Connection Manager (ECM)
   FILES:=$(PKG_BUILD_DIR)/*.ko
   KCONFIG:=CONFIG_BRIDGE_NETFILTER=y \
@@ -67,7 +69,7 @@ ECM_MAKE_OPTS+= ECM_FRONT_END_NSS_ENABLE=y \
 		ECM_CLASSIFIER_DSCP_ENABLE=n \
 		ECM_CLASSIFIER_PCC_ENABLE=n \
 		ECM_BAND_STEERING_ENABLE=n \
-		ECM_INTERFACE_PPPOE_ENABLE=n \
+		ECM_INTERFACE_PPPOE_ENABLE=y \
 		ECM_CLASSIFIER_NL_ENABLE=n
 endif
 
