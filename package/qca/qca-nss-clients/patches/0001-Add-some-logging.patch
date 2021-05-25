@@ -1,0 +1,72 @@
+From 0a446e691f1a24b6037536d07d1e3b90f3265215 Mon Sep 17 00:00:00 2001
+From: Shane Francis <bigbeeshane@gmail.com>
+Date: Tue, 25 May 2021 23:26:43 +0100
+Subject: [PATCH] Add some logging
+
+---
+ pppoe/nss_connmgr_pppoe.c | 6 +++++-
+ pppoe/nss_connmgr_pppoe.h | 8 --------
+ 2 files changed, 5 insertions(+), 9 deletions(-)
+
+diff --git a/pppoe/nss_connmgr_pppoe.c b/pppoe/nss_connmgr_pppoe.c
+index b4ece7c..a4481e6 100755
+--- a/pppoe/nss_connmgr_pppoe.c
++++ b/pppoe/nss_connmgr_pppoe.c
+@@ -216,6 +216,7 @@ static int nss_connmgr_pppoe_connect(struct net_device *dev)
+ 	 * check whether the interface is of type PPP
+ 	 */
+ 	if (dev->type != ARPHRD_PPP || !(dev->flags & IFF_POINTOPOINT)) {
++		nss_connmgr_pppoe_warn("%px: Nopt PPP interface\n", dev);
+ 		return NOTIFY_DONE;
+ 	}
+ 
+@@ -373,11 +374,13 @@ static int nss_connmgr_pppoe_channel_notifier_handler(struct notifier_block *nb,
+ 
+ 	switch (event) {
+ 	case PPP_CHANNEL_CONNECT:
++		nss_connmgr_pppoe_warn("pppoe connect ++\n";
+ 		return nss_connmgr_pppoe_connect(dev);
+ 	case PPP_CHANNEL_DISCONNECT:
++		nss_connmgr_pppoe_warn("pppoe disconnect --\n";
+ 		return nss_connmgr_pppoe_disconnect(dev);
+ 	default:
+-		nss_connmgr_pppoe_info("%px: Unhandled channel event: %lu\n", dev, event);
++		nss_connmgr_pppoe_warn("%px: Unhandled channel event: %lu\n", dev, event);
+ 		break;
+ 	}
+ 
+@@ -426,6 +429,7 @@ int __init nss_connmgr_pppoe_init_module(void)
+ 	/*
+ 	 * Register the module to the PPP channel events.
+ 	 */
++	nss_connmgr_pppoe_info("PPPoE register for notifications\n");
+ 	ppp_channel_connection_register_notify(&nss_connmgr_pppoe_channel_notifier_nb);
+ 	return 0;
+ }
+diff --git a/pppoe/nss_connmgr_pppoe.h b/pppoe/nss_connmgr_pppoe.h
+index eed16f8..529ad17 100644
+--- a/pppoe/nss_connmgr_pppoe.h
++++ b/pppoe/nss_connmgr_pppoe.h
+@@ -45,19 +45,11 @@
+ /*
+  * Statically compile messages at different levels
+  */
+-#if (NSS_PPPOE_DEBUG_LEVEL < 2)
+-#define nss_connmgr_pppoe_warn(s, ...)
+-#else
+ #define nss_connmgr_pppoe_warn(s, ...) pr_warn("%s[%d]:" s, __func__, \
+ 					 __LINE__, ##__VA_ARGS__)
+-#endif
+ 
+-#if (NSS_PPPOE_DEBUG_LEVEL < 3)
+-#define nss_connmgr_pppoe_info(s, ...)
+-#else
+ #define nss_connmgr_pppoe_info(s, ...) pr_notice("%s[%d]:" s, __func__, \
+ 					   __LINE__, ##__VA_ARGS__)
+-#endif
+ 
+ #if (NSS_PPPOE_DEBUG_LEVEL < 4)
+ #define nss_connmgr_pppoe_trace(s, ...)
+-- 
+2.31.1
+

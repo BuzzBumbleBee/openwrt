@@ -1,0 +1,232 @@
+diff -ur ./drivers/net/ppp/ppp_generic.c /home/shane/test/drivers/net/ppp/ppp_generic.c
+--- ./drivers/net/ppp/ppp_generic.c	2021-05-25 23:34:49.012849923 +0100
++++ /home/shane/test/drivers/net/ppp/ppp_generic.c	2021-05-25 23:31:09.731172735 +0100
+@@ -48,6 +48,7 @@
+ #include <net/slhc_vj.h>
+ #include <linux/atomic.h>
+ #include <linux/refcount.h>
++#include <linux/if_pppox.h>
+ 
+ #include <linux/nsproxy.h>
+ #include <net/net_namespace.h>
+@@ -250,6 +251,25 @@
+ #define seq_before(a, b)	((s32)((a) - (b)) < 0)
+ #define seq_after(a, b)		((s32)((a) - (b)) > 0)
+ 
++
++/*
++ * Registration/Unregistration methods
++ * for PPP channel connect and disconnect event notifications.
++ */
++RAW_NOTIFIER_HEAD(ppp_channel_connection_notifier_list);
++
++void ppp_channel_connection_register_notify(struct notifier_block *nb)
++{
++	raw_notifier_chain_register(&ppp_channel_connection_notifier_list, nb);
++}
++EXPORT_SYMBOL_GPL(ppp_channel_connection_register_notify);
++
++void ppp_channel_connection_unregister_notify(struct notifier_block *nb)
++{
++	raw_notifier_chain_unregister(&ppp_channel_connection_notifier_list, nb);
++}
++EXPORT_SYMBOL_GPL(ppp_channel_connection_unregister_notify);
++
+ /* Prototypes. */
+ static int ppp_unattached_ioctl(struct net *net, struct ppp_file *pf,
+ 			struct file *file, unsigned int cmd, unsigned long arg);
+@@ -3283,7 +3303,10 @@
+ 	struct ppp_net *pn;
+ 	int ret = -ENXIO;
+ 	int hdrlen;
++	int ppp_proto;
++	int version;
+ 
++	int notify = 0;
+ 	pn = ppp_pernet(pch->chan_net);
+ 
+ 	mutex_lock(&pn->all_ppp_mutex);
+@@ -3314,13 +3337,40 @@
+ 	++ppp->n_channels;
+ 	pch->ppp = ppp;
+ 	refcount_inc(&ppp->file.refcnt);
++	
++	/* Set the netdev priv flag if the prototype
++	 * is L2TP or PPTP. Return success in all cases
++	 */
++	if (!pch->chan)
++		goto out2;
++
++	ppp_proto = ppp_channel_get_protocol(pch->chan);
++	if (ppp_proto == PX_PROTO_PPTP) {
++		ppp->dev->priv_flags_ext |= IFF_EXT_PPP_PPTP;
++	} else if (ppp_proto == PX_PROTO_OL2TP) {
++		version = ppp_channel_get_proto_version(pch->chan);
++		if (version == 2)
++			ppp->dev->priv_flags_ext |= IFF_EXT_PPP_L2TPV2;
++		else if (version == 3)
++			ppp->dev->priv_flags_ext |= IFF_EXT_PPP_L2TPV3;
++	}
++	notify = 1;
++	
++ out2:
+ 	ppp_unlock(ppp);
+ 	ret = 0;
+-
+  outl:
+ 	write_unlock_bh(&pch->upl);
+  out:
+ 	mutex_unlock(&pn->all_ppp_mutex);
++
++	if (notify && ppp && ppp->dev) {
++		dev_hold(ppp->dev);
++		raw_notifier_call_chain(&ppp_channel_connection_notifier_list,
++					   PPP_CHANNEL_CONNECT, ppp->dev);
++		dev_put(ppp->dev);
++	}
++	
+ 	return ret;
+ }
+ 
+@@ -3338,6 +3388,13 @@
+ 	pch->ppp = NULL;
+ 	write_unlock_bh(&pch->upl);
+ 	if (ppp) {
++		if (ppp->dev) {
++			dev_hold(ppp->dev);
++			raw_notifier_call_chain(&ppp_channel_connection_notifier_list,
++					   PPP_CHANNEL_DISCONNECT, ppp->dev);
++			dev_put(ppp->dev);
++		}
++
+ 		/* remove it from the ppp unit's list */
+ 		ppp_lock(ppp);
+ 		list_del(&pch->clist);
+@@ -3499,6 +3556,18 @@
+ }
+ EXPORT_SYMBOL(ppp_channel_get_protocol);
+ 
++/* ppp_channel_get_proto_version()
++ *	Call this to get channel protocol version
++ */
++int ppp_channel_get_proto_version(struct ppp_channel *chan)
++{
++	if (!chan->ops->get_channel_protocol_ver)
++		return -1;
++
++	return chan->ops->get_channel_protocol_ver(chan);
++}
++EXPORT_SYMBOL(ppp_channel_get_proto_version);
++
+ /* ppp_channel_hold()
+  *	Call this to hold a channel.
+  *
+@@ -3527,6 +3596,28 @@
+ }
+ EXPORT_SYMBOL(ppp_channel_release);
+ 
++/* Check if ppp xmit lock is on hold */
++bool ppp_is_xmit_locked(struct net_device *dev)
++{
++	struct ppp *ppp;
++
++	if (!dev)
++		return false;
++
++	if (dev->type != ARPHRD_PPP)
++		return false;
++
++	ppp = netdev_priv(dev);
++	if (!ppp)
++		return false;
++
++	if (spin_is_locked(&(ppp)->wlock))
++		return true;
++
++	return false;
++}
++EXPORT_SYMBOL(ppp_is_xmit_locked);
++
+ /* ppp_hold_channels()
+  *	Returns the PPP channels of the PPP device, storing each one into
+  *	channels[].
+diff -ur ./include/linux/netdevice.h /home/shane/test/include/linux/netdevice.h
+--- ./include/linux/netdevice.h	2021-05-25 23:34:48.986183458 +0100
++++ /home/shane/test/include/linux/netdevice.h	2021-05-25 23:31:27.574370930 +0100
+@@ -1620,6 +1620,24 @@
+ 	IFF_LIVE_RENAME_OK		= 1<<30,
+ };
+ 
++
++/**
++ * enum netdev_priv_flags_ext - &struct net_device priv_flags_ext
++ *
++ * These flags are used to check for device type and can be
++ * set and used by the drivers
++ *
++ */
++enum netdev_priv_flags_ext {
++	IFF_EXT_TUN_TAP			= 1<<0,
++	IFF_EXT_PPP_L2TPV2		= 1<<1,
++	IFF_EXT_PPP_L2TPV3		= 1<<2,
++	IFF_EXT_PPP_PPTP		= 1<<3,
++	IFF_EXT_GRE_V4_TAP		= 1<<4,
++	IFF_EXT_GRE_V6_TAP		= 1<<5,
++	IFF_EXT_IFB			= 1<<6,
++};
++
+ #define IFF_802_1Q_VLAN			IFF_802_1Q_VLAN
+ #define IFF_EBRIDGE			IFF_EBRIDGE
+ #define IFF_BONDING			IFF_BONDING
+@@ -1994,6 +2012,7 @@
+ 
+ 	unsigned int		flags;
+ 	unsigned int		priv_flags;
++	unsigned int		priv_flags_ext;
+ 
+ 	unsigned short		gflags;
+ 	unsigned short		padded;
+diff -ur ./include/linux/ppp_channel.h /home/shane/test/include/linux/ppp_channel.h
+--- ./include/linux/ppp_channel.h	2021-05-25 23:34:49.012849923 +0100
++++ /home/shane/test/include/linux/ppp_channel.h	2021-05-25 23:31:21.394417729 +0100
+@@ -19,6 +19,10 @@
+ #include <linux/skbuff.h>
+ #include <linux/poll.h>
+ #include <net/net_namespace.h>
++#include <linux/notifier.h>
++
++#define PPP_CHANNEL_DISCONNECT	0
++#define PPP_CHANNEL_CONNECT	1
+ 
+ struct ppp_channel;
+ 
+@@ -89,6 +93,9 @@
+  */
+ extern int ppp_channel_get_protocol(struct ppp_channel *);
+ 
++/* Call this get protocol version */
++extern int ppp_channel_get_proto_version(struct ppp_channel *);
++
+ /* Call this to hold a channel */
+ extern bool ppp_channel_hold(struct ppp_channel *);
+ 
+@@ -103,10 +110,19 @@
+ extern int ppp_hold_channels(struct net_device *dev,
+ 			     struct ppp_channel *channels[],
+ 			     unsigned int chan_sz);
++			     
++/* Test if ppp xmit lock is locked */
++extern bool ppp_is_xmit_locked(struct net_device *dev);
+ 
+ /* Test if the ppp device is a multi-link ppp device */
+ extern int ppp_is_multilink(struct net_device *dev);
+ 
++/* Register the PPP channel connect notifier */
++extern void ppp_channel_connection_register_notify(struct notifier_block *nb);
++
++/* Unregister the PPP channel connect notifier */
++extern void ppp_channel_connection_unregister_notify(struct notifier_block *nb);
++
+ /* Update statistics of the PPP net_device by incrementing related
+  * statistics field value with corresponding parameter
+  */
